@@ -6,10 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "metrics:instagram": "node tools/instagram-creator-metrics.mjs --input data/instagram-usernames.json --output data/instagram-report.json",
+    "metrics:instagram:help": "node tools/instagram-creator-metrics.mjs --help"
   },
   "dependencies": {
     "next": "16.2.1",
+    "playwright": "^1.59.1",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },

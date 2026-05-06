@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Closer Creator Dashboard
 
-## Getting Started
+A Next.js App Router site for a closer-focused creator dashboard concept.
 
-First, run the development server:
+## Project Overview
+
+- Framework: Next.js (App Router) + React + TypeScript
+- Styling: Tailwind CSS v4 (`@import "tailwindcss"`) plus custom global CSS variables
+- Fonts: `next/font/google` with `Space Grotesk` and `IBM Plex Mono`
+- Goal: Fast, conversion-focused landing page with a custom visual style
+
+## Current Structure
+
+```text
+closer-creator-dashboard/
+|- src/
+|  |- app/
+|  |  |- favicon.ico
+|  |  |- globals.css      # color system, atmospheric backgrounds, animations
+|  |  |- layout.tsx       # root layout + metadata + font wiring
+|  |  |- page.tsx         # homepage content
+|- public/                # static assets
+|- package.json
+|- next.config.ts
+|- tsconfig.json
+```
+
+## Setup
+
+```bash
+npm install
+```
+
+## Run Locally
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Build For Production
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm run start
+```
 
-## Learn More
+## Practical API Tool (Instagram)
 
-To learn more about Next.js, take a look at the following resources:
+This repo now includes a practical CLI tool that calls your RocketAPI endpoint and outputs:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `userId` (Instagram numeric id)
+- `followerCount`
+- `top10MediaViews` (sum of highest 10 video view counts available in profile payload)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Files:
 
-## Deploy on Vercel
+- `tools/instagram-creator-metrics.mjs`
+- `data/instagram-usernames.json`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Set your API token:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+export ROCKETAPI_TOKEN="your-api-key"
+```
+
+Run:
+
+```bash
+npm run metrics:instagram
+```
+
+The command prints a table and writes JSON to `data/instagram-report.json`.
+
+## Obvious Issues / Next Improvements
+
+- CTA buttons currently use `#` links; replace with real routes or actions.
+- No analytics/event tracking is connected yet.
+- No test suite is configured yet for UI or route behavior.
+- The site is currently single-page; add internal routes for pricing, case studies, and onboarding flows.
