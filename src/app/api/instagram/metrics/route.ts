@@ -1,5 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { headers } from "next/headers";
+import { auth } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -1052,6 +1054,11 @@ function getLast30DaysViewCounts(items: ClipMediaItem[]): number[] {
 
 export async function POST(request: Request) {
   try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    if (!session) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const token = process.env.ROCKETAPI_TOKEN;
     if (!token) {
       return Response.json(
