@@ -43,11 +43,15 @@ type CreatorMetric = {
   last30DaysSdFilteredAverageViews: number;
 };
 
-export default function HomeClient() {
+type HomeClientProps = {
+  devModeEnabled: boolean;
+};
+
+export default function HomeClient({ devModeEnabled }: HomeClientProps) {
   const [input, setInput] = useState("");
   const [rows, setRows] = useState<CreatorMetric[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isDevMode, setIsDevMode] = useState(false);
+  const [isDevMode, setIsDevMode] = useState(devModeEnabled);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [error, setError] = useState("");
 
@@ -207,15 +211,17 @@ export default function HomeClient() {
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
       <div className="flex items-center justify-end">
-        <label className="mr-4 inline-flex items-center gap-2 text-sm text-zinc-700">
-          <input
-            type="checkbox"
-            checked={isDevMode}
-            onChange={(event) => setIsDevMode(event.target.checked)}
-            className="h-4 w-4"
-          />
-          Dev Mode
-        </label>
+        {devModeEnabled ? (
+          <label className="mr-4 inline-flex items-center gap-2 text-sm text-zinc-700">
+            <input
+              type="checkbox"
+              checked={isDevMode}
+              onChange={(event) => setIsDevMode(event.target.checked)}
+              className="h-4 w-4"
+            />
+            Dev Mode
+          </label>
+        ) : null}
         <button
           type="button"
           onClick={handleExportCsv}

@@ -10,6 +10,8 @@ const SHORTCODE_INFO_API_URL = "https://v1.rocketapi.io/instagram/media/get_info
 const CLIPS_API_URL = "https://v1.rocketapi.io/instagram/user/get_clips";
 const INSTAGRAM_BASE_URL = "https://www.instagram.com";
 const API_RESPONSE_DIR = path.join(process.cwd(), "data", "api-responses");
+const DEV_FEATURES_ENABLED =
+  process.env.ENABLE_DEV_MODE === "true" && process.env.NODE_ENV !== "production";
 
 const PLAYWRIGHT_TOP_COUNT = 10;
 const PLAYWRIGHT_DISCOVERY_COUNT = 24;
@@ -385,6 +387,10 @@ function safeStringify(value: unknown, maxLength = 6000): string {
 }
 
 function logStep(username: string, step: string, detail?: Record<string, unknown>) {
+  if (!DEV_FEATURES_ENABLED) {
+    return;
+  }
+
   const payload = {
     at: new Date().toISOString(),
     username,
@@ -395,6 +401,10 @@ function logStep(username: string, step: string, detail?: Record<string, unknown
 }
 
 async function writeProfileRawResponse(username: string, payload: unknown): Promise<string> {
+  if (!DEV_FEATURES_ENABLED) {
+    return "";
+  }
+
   const dir = path.join(API_RESPONSE_DIR, "profile-raw");
   await fs.mkdir(dir, { recursive: true });
 
@@ -426,6 +436,10 @@ function parseRocketBody(rawBody: unknown): unknown {
 }
 
 async function writeApiResponsesToFile(logs: ApiResponseLog[]): Promise<string> {
+  if (!DEV_FEATURES_ENABLED) {
+    return "";
+  }
+
   await fs.mkdir(API_RESPONSE_DIR, { recursive: true });
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -1078,7 +1092,7 @@ export async function POST(request: Request) {
     }
 
     const rows: CreatorMetric[] = [];
-    const apiResponses: ApiResponseLog[] = [];
+    const apiResponses = DEV_FEATURES_ENABLED ? ([] as ApiResponseLog[]) : null;
 
     for (const username of usernames) {
       const startedAt = Date.now();
@@ -1162,13 +1176,15 @@ export async function POST(request: Request) {
       const engagementRate =
         followerCount > 0 ? ((rocketLikeCount + rocketCommentCount) / followerCount) * 100 : 0;
 
-      apiResponses.push({
-        username,
-        profileResponse: profileRaw,
-        playwrightResponses: playwrightResult.mediaResponses,
-        rocketClipsResponses: rocketResult.mediaResponses,
-        shortcodeInfoResponses: playwrightResult.shortcodeInfoResponses,
-      });
+      if (apiResponses) {
+        apiResponses.push({
+          username,
+          profileResponse: profileRaw,
+          playwrightResponses: playwrightResult.mediaResponses,
+          rocketClipsResponses: rocketResult.mediaResponses,
+          shortcodeInfoResponses: playwrightResult.shortcodeInfoResponses,
+        });
+      }
 
       const profileUrl = `${INSTAGRAM_BASE_URL}/${username}/`;
 
@@ -1216,9 +1232,14 @@ export async function POST(request: Request) {
       logStep(username, "metrics:done", { elapsedMs: Date.now() - startedAt });
     }
 
-    const savedResponsePath = await writeApiResponsesToFile(apiResponses);
-    logStep("batch", "metrics:success", { savedResponsePath, count: rows.length });
-    return Response.json({ rows, savedResponsePath });
+    if (apiResponses) {
+      const savedResponsePath = await writeApiResponsesToFile(apiResponses);
+      logStep("batch", "metrics:success", { savedResponsePath, count: rows.length });
+      return Response.json({ rows, savedResponsePath });
+    }
+
+    logStep("batch", "metrics:success", { count: rows.length });
+    return Response.json({ rows });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown server error";
     console.error("[instagram-metrics] request_failed", safeStringify({ message, error }, 2000));
