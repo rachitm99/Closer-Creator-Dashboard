@@ -577,6 +577,7 @@ async function scrapeReelsViaPlaywright(
             goto: (url: string, options?: Record<string, unknown>) => Promise<void>;
             waitForTimeout: (ms: number) => Promise<void>;
             evaluate: <T>(fn: () => T) => Promise<T>;
+            content: () => Promise<string>;
           }>;
           close: () => Promise<void>;
         }>;
