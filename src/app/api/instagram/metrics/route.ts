@@ -25,11 +25,11 @@ const ROCKET_TOP_COUNT = 100;
 const ROCKET_PAGE_SIZE = 50;
 const ROCKET_MAX_PAGES = 8;
 const RECEIVED_ORDER_EXCLUDED_COUNT = 5;
-const ROCKET_AVG_TOP_COUNT = 20;
 const ROCKET_MEDIAN_TOP_COUNT = 10;
 const PLAYWRIGHT_TARGET_COUNT = PLAYWRIGHT_TOP_COUNT + RECEIVED_ORDER_EXCLUDED_COUNT;
 const ROCKET_TARGET_COUNT = ROCKET_TOP_COUNT + RECEIVED_ORDER_EXCLUDED_COUNT;
 const THIRTY_DAYS_SECONDS = 30 * 24 * 60 * 60;
+const SEVEN_DAYS_SECONDS = 7 * 24 * 60 * 60;
 const SD_SIGMA = 1;
 const SD_CLIP_MAX_ITERATIONS = 6;
 const SD_CLIP_MIN_VALUES = 3;
@@ -345,6 +345,39 @@ function getSdFilteredValues(values: number[], sigma = SD_SIGMA): number[] {
     }
 
     working = filtered;
+  }
+
+  return working;
+}
+
+function getSdFilteredClipMediaItems(items: ClipMediaItem[], sigma = SD_SIGMA): ClipMediaItem[] {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const working = [...items];
+
+  for (let iteration = 0; iteration < SD_CLIP_MAX_ITERATIONS; iteration += 1) {
+    if (working.length < SD_CLIP_MIN_VALUES) {
+      break;
+    }
+
+    const viewCounts = working.map((item) => item.viewCount);
+    const mean = getAverage(viewCounts);
+    const stdDev = getStdDev(viewCounts);
+    if (stdDev === 0) {
+      return working;
+    }
+
+    const min = mean - sigma * stdDev;
+    const max = mean + sigma * stdDev;
+    const filtered = working.filter((item) => item.viewCount >= min && item.viewCount <= max);
+
+    if (filtered.length === 0 || filtered.length === working.length) {
+      break;
+    }
+
+    working.splice(0, working.length, ...filtered);
   }
 
   return working;
@@ -1071,11 +1104,28 @@ function getLast30DaysViewCounts(items: ClipMediaItem[]): number[] {
     .filter((value) => value > 0);
 }
 
+function getLast7DaysViewCountsTimeSorted(items: ClipMediaItem[]): number[] {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const cutoffSeconds = nowSeconds - SEVEN_DAYS_SECONDS;
+
+  return [...items]
+    .filter((item) => item.takenAt >= cutoffSeconds)
+    .sort((a, b) => b.takenAt - a.takenAt)
+    .map((item) => item.viewCount)
+    .filter((value) => value > 0);
+}
+
 export async function POST(request: Request) {
   try {
-    const session = await auth.api.getSession({ headers: await headers() });
-    if (!session) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    const requestHeaders = await headers();
+    const host = requestHeaders.get("host") ?? "";
+    const isLocalhost = host.startsWith("localhost") || host.startsWith("127.0.0.1");
+
+    if (!(DEV_FEATURES_ENABLED && isLocalhost)) {
+      const session = await auth.api.getSession({ headers: requestHeaders });
+      if (!session) {
+        return Response.json({ error: "Unauthorized" }, { status: 401 });
+      }
     }
 
     const token = process.env.ROCKETAPI_TOKEN;
@@ -1167,9 +1217,13 @@ export async function POST(request: Request) {
       );
       const timeSortedRocketViewCounts = timeSortedRocket100.map((item) => item.viewCount);
       const timeSortedRocketMetrics = computeMetrics(timeSortedRocketViewCounts);
-      const timeSortedRocketTop20 = getTopNClipMediaItemsByTime(
-        rocketResult.clipMediaItems,
-        ROCKET_AVG_TOP_COUNT
+      const timeSortedRocketTop20 = getFirstNClipMediaItems(
+        getTopNClipMediaItemsByTime(
+          rocketResult.clipMediaItems,
+          20 + RECEIVED_ORDER_EXCLUDED_COUNT
+        ),
+        20,
+        RECEIVED_ORDER_EXCLUDED_COUNT
       );
       const timeSortedRocketTop20Views = timeSortedRocketTop20.map((item) => item.viewCount);
       const rocketTop20AverageViewsTimeSortedSdFiltered = getSdFilteredAverage(
@@ -1193,8 +1247,9 @@ export async function POST(request: Request) {
         ROCKET_MEDIAN_TOP_COUNT,
         RECEIVED_ORDER_EXCLUDED_COUNT
       );
-      const rocketLikeCount = selectedRocket10ForEngagement.reduce((sum, item) => sum + item.likeCount, 0);
-      const rocketCommentCount = selectedRocket10ForEngagement.reduce(
+      const sdFilteredRocket10ForEngagement = getSdFilteredClipMediaItems(selectedRocket10ForEngagement);
+      const rocketLikeCount = sdFilteredRocket10ForEngagement.reduce((sum, item) => sum + item.likeCount, 0);
+      const rocketCommentCount = sdFilteredRocket10ForEngagement.reduce(
         (sum, item) => sum + item.commentCount,
         0
       );

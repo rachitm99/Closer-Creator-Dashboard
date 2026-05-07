@@ -90,7 +90,7 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
       "Username",
       "Profile URL",
       "Follower Count",
-      "Top 20 Avg View Count",
+      "Average View Count",
       "Median View Count",
       "Engagement Rate",
     ];
@@ -240,7 +240,7 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
               <th className="border-b border-zinc-300 px-4 py-3">Username</th>
               <th className="border-b border-zinc-300 px-4 py-3">Profile URL</th>
               <th className="border-b border-zinc-300 px-4 py-3">Follower Count</th>
-              <th className="border-b border-zinc-300 px-4 py-3">Top 20 Avg View Count</th>
+              <th className="border-b border-zinc-300 px-4 py-3">Average View Count</th>
               <th className="border-b border-zinc-300 px-4 py-3">Median View Count</th>
               <th className="border-b border-zinc-300 px-4 py-3">Engagement Rate</th>
               {isDevMode ? (
