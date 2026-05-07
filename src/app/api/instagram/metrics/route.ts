@@ -12,6 +12,8 @@ const INSTAGRAM_BASE_URL = "https://www.instagram.com";
 const API_RESPONSE_DIR = path.join(process.cwd(), "data", "api-responses");
 const DEV_FEATURES_ENABLED =
   process.env.ENABLE_DEV_MODE === "true" && process.env.NODE_ENV !== "production";
+const PLAYWRIGHT_ENABLED =
+  DEV_FEATURES_ENABLED && process.env.USE_PLAYWRIGHT_REELS_SCRAPER !== "false";
 
 const PLAYWRIGHT_TOP_COUNT = 10;
 const PLAYWRIGHT_DISCOVERY_COUNT = 24;
@@ -23,6 +25,7 @@ const ROCKET_TOP_COUNT = 100;
 const ROCKET_PAGE_SIZE = 50;
 const ROCKET_MAX_PAGES = 8;
 const RECEIVED_ORDER_EXCLUDED_COUNT = 5;
+const ROCKET_AVG_TOP_COUNT = 20;
 const ROCKET_MEDIAN_TOP_COUNT = 10;
 const PLAYWRIGHT_TARGET_COUNT = PLAYWRIGHT_TOP_COUNT + RECEIVED_ORDER_EXCLUDED_COUNT;
 const ROCKET_TARGET_COUNT = ROCKET_TOP_COUNT + RECEIVED_ORDER_EXCLUDED_COUNT;
@@ -62,6 +65,7 @@ type CreatorMetric = {
   rocketAverageViewsTimeSorted: number;
   rocketStdDevTimeSorted: number;
   rocketSdFilteredAverageViewsTimeSorted: number;
+  rocketTop20AverageViewsTimeSortedSdFiltered: number;
   rocketTop10MedianViewsTimeSortedSdFiltered: number;
   rocketTopMediaItemsUsed: number;
   rocketTop100MediaViews: number;
@@ -101,6 +105,7 @@ type PlaywrightStopReason =
   | "insufficient_clips_found"
   | "no_shortcodes_found"
   | "playwright_fallback_rocket_clips"
+  | "playwright_disabled"
   | "playwright_error"
   | "shortcode_info_only_errors"
   | "shortcode_info_no_views";
@@ -1103,13 +1108,29 @@ export async function POST(request: Request) {
         throw new Error(`Missing user id for ${username}.`);
       }
 
-      logStep(username, "playwright:start", { userId });
-      const playwrightResult = await fetchPlaywrightTop10ByTime(token, username, userId);
-      logStep(username, "playwright:done", {
-        clipsFound: playwrightResult.debug.clipsFound,
-        clipsWithViewsFound: playwrightResult.debug.clipsWithViewsFound,
-        stopReason: playwrightResult.debug.stopReason,
-      });
+      let playwrightResult: Awaited<ReturnType<typeof fetchPlaywrightTop10ByTime>>;
+      if (PLAYWRIGHT_ENABLED) {
+        logStep(username, "playwright:start", { userId });
+        playwrightResult = await fetchPlaywrightTop10ByTime(token, username, userId);
+        logStep(username, "playwright:done", {
+          clipsFound: playwrightResult.debug.clipsFound,
+          clipsWithViewsFound: playwrightResult.debug.clipsWithViewsFound,
+          stopReason: playwrightResult.debug.stopReason,
+        });
+      } else {
+        playwrightResult = {
+          clipMediaItems: [],
+          mediaResponses: [],
+          shortcodeInfoResponses: [],
+          debug: {
+            pagesFetched: 0,
+            mediaItemsScanned: 0,
+            clipsFound: 0,
+            clipsWithViewsFound: 0,
+            stopReason: "playwright_disabled",
+          },
+        };
+      }
       const selectedPlaywright10 = getFirstNClipMediaItems(
         playwrightResult.clipMediaItems,
         PLAYWRIGHT_TOP_COUNT,
@@ -1146,6 +1167,14 @@ export async function POST(request: Request) {
       );
       const timeSortedRocketViewCounts = timeSortedRocket100.map((item) => item.viewCount);
       const timeSortedRocketMetrics = computeMetrics(timeSortedRocketViewCounts);
+      const timeSortedRocketTop20 = getTopNClipMediaItemsByTime(
+        rocketResult.clipMediaItems,
+        ROCKET_AVG_TOP_COUNT
+      );
+      const timeSortedRocketTop20Views = timeSortedRocketTop20.map((item) => item.viewCount);
+      const rocketTop20AverageViewsTimeSortedSdFiltered = getSdFilteredAverage(
+        timeSortedRocketTop20Views
+      );
       const timeSortedRocketTop10 = getFirstNClipMediaItems(
         getTopNClipMediaItemsByTime(
           rocketResult.clipMediaItems,
@@ -1215,6 +1244,7 @@ export async function POST(request: Request) {
         rocketAverageViewsTimeSorted: timeSortedRocketMetrics.average,
         rocketStdDevTimeSorted: timeSortedRocketMetrics.stdDev,
         rocketSdFilteredAverageViewsTimeSorted: timeSortedRocketMetrics.sdFilteredAverage,
+        rocketTop20AverageViewsTimeSortedSdFiltered,
         rocketTop10MedianViewsTimeSortedSdFiltered,
         rocketTopMediaItemsUsed: selectedRocket100.length,
         rocketTop100MediaViews,
