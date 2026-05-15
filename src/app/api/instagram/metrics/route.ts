@@ -21,7 +21,7 @@ const PLAYWRIGHT_SCROLL_PASSES = 10;
 const PLAYWRIGHT_STAGNATION_LIMIT = 3;
 const PLAYWRIGHT_SCROLL_WAIT_MS = 1200;
 const PLAYWRIGHT_INITIAL_WAIT_MS = 2500;
-const ROCKET_TOP_COUNT = 100;
+const ROCKET_TOP_COUNT = 60;
 const ROCKET_PAGE_SIZE = 50;
 const ROCKET_MAX_PAGES = 8;
 const RECEIVED_ORDER_EXCLUDED_COUNT = 5;
@@ -66,10 +66,11 @@ type CreatorMetric = {
   rocketStdDevTimeSorted: number;
   rocketSdFilteredAverageViewsTimeSorted: number;
   rocketTop20AverageViewsTimeSortedSdFiltered: number;
-  rocketTop20AverageViewsTimeSortedSdFilteredRaw: number;
+  rocketTop20AverageViewsTimeSortedRaw: number;
+  rocketTop60EveryOtherAverageViewsTimeSorted: number;
   rocketTop10MedianViewsTimeSortedSdFiltered: number;
   rocketTopMediaItemsUsed: number;
-  rocketTop100MediaViews: number;
+  rocketTop60MediaViews: number;
   rocketPagesFetched: number;
   rocketItemsScanned: number;
   rocketClipsFound: number;
@@ -811,7 +812,7 @@ async function fetchPlaywrightTop10ByTime(
     mediaResponses.push(discovery.raw);
 
     if (discovery.items.length === 0) {
-      const fallback = await fetchRocketTop100ByTime(token, userId);
+      const fallback = await fetchRocketTopByTime(token, userId);
       const fallbackItems = getFirstNClipMediaItems(fallback.clipMediaItems, PLAYWRIGHT_TARGET_COUNT);
       mediaResponses.push({
         source: "playwright_fallback_rocket_get_clips",
@@ -996,7 +997,7 @@ function isPinnedClipMedia(mediaItem: unknown): boolean {
   return false;
 }
 
-async function fetchRocketTop100ByTime(
+async function fetchRocketTopByTime(
   token: string,
   userId: string
 ): Promise<{
@@ -1218,55 +1219,51 @@ export async function POST(request: Request) {
       const playwrightTop10MediaViews = playwrightViewCounts.reduce((sum, value) => sum + value, 0);
 
       logStep(username, "rocket:start", { userId });
-      const rocketResult = await fetchRocketTop100ByTime(token, userId);
+      const rocketResult = await fetchRocketTopByTime(token, userId);
       logStep(username, "rocket:done", {
         clipsFound: rocketResult.debug.clipsFound,
         clipsWithViewsFound: rocketResult.debug.clipsWithViewsFound,
         stopReason: rocketResult.debug.stopReason,
       });
-      const selectedRocket100 = getFirstNClipMediaItems(
+      const selectedRocket60 = getFirstNClipMediaItems(
         rocketResult.clipMediaItems,
         ROCKET_TOP_COUNT,
         RECEIVED_ORDER_EXCLUDED_COUNT
       );
-      const rocketViewCounts = selectedRocket100.map((item) => item.viewCount);
+      const rocketViewCounts = selectedRocket60.map((item) => item.viewCount);
       const rocketMetrics = computeMetrics(rocketViewCounts);
-      const timeSortedRocket100 = getTopNClipMediaItemsByTime(
+      const timeSortedRocket60 = getTopNClipMediaItemsByTime(
         rocketResult.clipMediaItems,
         ROCKET_TOP_COUNT
       );
-      const timeSortedRocketViewCounts = timeSortedRocket100.map((item) => item.viewCount);
+      const timeSortedRocketViewCounts = timeSortedRocket60.map((item) => item.viewCount);
       const timeSortedRocketMetrics = computeMetrics(timeSortedRocketViewCounts);
-      const timeSortedRocketTop20 = getFirstNClipMediaItems(
+      const timeSortedRocketTop60 = getFirstNClipMediaItems(
         getTopNClipMediaItemsByTime(
           rocketResult.clipMediaItems,
-          20 + RECEIVED_ORDER_EXCLUDED_COUNT
+          ROCKET_TOP_COUNT + RECEIVED_ORDER_EXCLUDED_COUNT
         ),
-        20,
+        ROCKET_TOP_COUNT,
         RECEIVED_ORDER_EXCLUDED_COUNT
       );
+      const timeSortedRocketTop20 = getFirstNClipMediaItems(timeSortedRocketTop60, 20);
       const timeSortedRocketTop20ViewsAll = timeSortedRocketTop20.map((item) => item.viewCount);
-      const rocketTop20AverageViewsTimeSortedSdFilteredRaw = getSdFilteredAverage(
-        timeSortedRocketTop20ViewsAll
-      );
+      const rocketTop20AverageViewsTimeSortedRaw = getAverage(timeSortedRocketTop20ViewsAll);
       const timeSortedRocketTop20WithoutTop4 = excludeTopNByViewCount(timeSortedRocketTop20, 4);
       const timeSortedRocketTop20Views = timeSortedRocketTop20WithoutTop4.map((item) => item.viewCount);
       const rocketTop20AverageViewsTimeSortedSdFiltered = getSdFilteredAverage(
         timeSortedRocketTop20Views
       );
-      const timeSortedRocketTop10 = getFirstNClipMediaItems(
-        getTopNClipMediaItemsByTime(
-          rocketResult.clipMediaItems,
-          ROCKET_MEDIAN_TOP_COUNT + RECEIVED_ORDER_EXCLUDED_COUNT
-        ),
-        ROCKET_MEDIAN_TOP_COUNT,
-        RECEIVED_ORDER_EXCLUDED_COUNT
-      );
+      const timeSortedRocketTop10 = getFirstNClipMediaItems(timeSortedRocketTop60, ROCKET_MEDIAN_TOP_COUNT);
       const timeSortedRocketTop10Views = timeSortedRocketTop10.map((item) => item.viewCount);
       const rocketTop10MedianViewsTimeSortedSdFiltered = getMedian(
         getSdFilteredValues(timeSortedRocketTop10Views)
       );
-      const rocketTop100MediaViews = rocketViewCounts.reduce((sum, value) => sum + value, 0);
+      const timeSortedRocketTop60EveryOther = timeSortedRocketTop60.filter((_, index) => index % 2 === 0);
+      const rocketTop60EveryOtherAverageViewsTimeSorted = getAverage(
+        timeSortedRocketTop60EveryOther.map((item) => item.viewCount)
+      );
+      const rocketTop60MediaViews = rocketViewCounts.reduce((sum, value) => sum + value, 0);
       const selectedRocket10ForEngagement = getFirstNClipMediaItems(
         rocketResult.clipMediaItems,
         ROCKET_MEDIAN_TOP_COUNT,
@@ -1325,10 +1322,11 @@ export async function POST(request: Request) {
         rocketStdDevTimeSorted: timeSortedRocketMetrics.stdDev,
         rocketSdFilteredAverageViewsTimeSorted: timeSortedRocketMetrics.sdFilteredAverage,
         rocketTop20AverageViewsTimeSortedSdFiltered,
-        rocketTop20AverageViewsTimeSortedSdFilteredRaw,
+        rocketTop20AverageViewsTimeSortedRaw,
         rocketTop10MedianViewsTimeSortedSdFiltered,
-        rocketTopMediaItemsUsed: selectedRocket100.length,
-        rocketTop100MediaViews,
+        rocketTopMediaItemsUsed: selectedRocket60.length,
+        rocketTop60MediaViews,
+        rocketTop60EveryOtherAverageViewsTimeSorted,
         rocketPagesFetched: rocketResult.debug.pagesFetched,
         rocketItemsScanned: rocketResult.debug.mediaItemsScanned,
         rocketClipsFound: rocketResult.debug.clipsFound,

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 
 type CreatorMetric = {
   username: string;
@@ -30,10 +30,11 @@ type CreatorMetric = {
   rocketStdDevTimeSorted: number;
   rocketSdFilteredAverageViewsTimeSorted: number;
   rocketTop20AverageViewsTimeSortedSdFiltered: number;
-  rocketTop20AverageViewsTimeSortedSdFilteredRaw: number;
+  rocketTop20AverageViewsTimeSortedRaw: number;
+  rocketTop60EveryOtherAverageViewsTimeSorted: number;
   rocketTop10MedianViewsTimeSortedSdFiltered: number;
   rocketTopMediaItemsUsed: number;
-  rocketTop100MediaViews: number;
+  rocketTop60MediaViews: number;
   rocketPagesFetched: number;
   rocketItemsScanned: number;
   rocketClipsFound: number;
@@ -53,9 +54,12 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
   const [input, setInput] = useState("");
   const [rows, setRows] = useState<CreatorMetric[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const [isDevMode, setIsDevMode] = useState(devModeEnabled);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [error, setError] = useState("");
+  const abortRef = useRef<AbortController | null>(null);
+  const stopRequestedRef = useRef(false);
 
   const hasRows = rows.length > 0;
 
@@ -92,7 +96,8 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
       "Profile URL",
       "Follower Count",
       "Average View Count (Excl Top 4)",
-      "Average View Count (No Exclusion)",
+      "Average View Count (No Exclusion, Raw)",
+      "Average View Count (Top 60, Every Other)",
       "Median View Count",
       "Engagement Rate",
     ];
@@ -105,7 +110,8 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
         row.profileUrl,
         row.followerCount,
         Math.round(row.rocketTop20AverageViewsTimeSortedSdFiltered),
-        Math.round(row.rocketTop20AverageViewsTimeSortedSdFilteredRaw),
+        Math.round(row.rocketTop20AverageViewsTimeSortedRaw),
+        Math.round(row.rocketTop60EveryOtherAverageViewsTimeSorted),
         Math.round(row.rocketTop10MedianViewsTimeSortedSdFiltered),
         row.engagementRate.toFixed(2),
       ];
@@ -129,8 +135,11 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsLoading(true);
+    setIsStopping(false);
     setError("");
     setRows([]);
+    stopRequestedRef.current = false;
+    abortRef.current = new AbortController();
 
     const rawEntries = input
       .split(/[\s,]+/)
@@ -142,6 +151,8 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
       setError("Paste at least one Instagram profile URL or username.");
       setProgress({ done: 0, total: 0 });
       setIsLoading(false);
+      setIsStopping(false);
+      abortRef.current = null;
       return;
     }
 
@@ -149,8 +160,15 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
 
     const errors: string[] = [];
 
+    let wasStopped = false;
+
     try {
       for (let index = 0; index < entries.length; index += 1) {
+        if (stopRequestedRef.current) {
+          wasStopped = true;
+          break;
+        }
+
         const entry = entries[index];
 
         try {
@@ -159,6 +177,7 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
             headers: {
               "Content-Type": "application/json",
             },
+            signal: abortRef.current?.signal,
             body: JSON.stringify({
               usernamesText: entry,
             }),
@@ -174,6 +193,14 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
             setRows((currentRows) => [...currentRows, ...fetchedRows]);
           }
         } catch (accountError) {
+          if (
+            (accountError instanceof DOMException || accountError instanceof Error) &&
+            accountError.name === "AbortError"
+          ) {
+            wasStopped = true;
+            break;
+          }
+
           const message =
             accountError instanceof Error ? accountError.message : "Unexpected error.";
           errors.push(`${entry}: ${message}`);
@@ -186,12 +213,26 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
       setError(message);
       setRows([]);
     } finally {
-      if (errors.length > 0) {
+      if (wasStopped) {
+        setError("Stopped by user.");
+      } else if (errors.length > 0) {
         setError(`Some accounts failed: ${errors.join(" | ")}`);
       }
 
+      abortRef.current = null;
       setIsLoading(false);
+      setIsStopping(false);
     }
+  }
+
+  function handleStop() {
+    if (!isLoading || stopRequestedRef.current) {
+      return;
+    }
+
+    stopRequestedRef.current = true;
+    setIsStopping(true);
+    abortRef.current?.abort();
   }
 
   return (
@@ -203,13 +244,23 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
           className="min-h-72 w-full rounded-md border border-zinc-300 bg-white p-4 text-base outline-none focus:border-zinc-500"
           placeholder="Paste Instagram profile URLs or usernames (space or newline separated)"
         />
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="h-11 w-36 rounded-md bg-zinc-900 text-sm font-medium text-white disabled:opacity-60"
-        >
-          {isLoading ? `Loading ${progress.done}/${progress.total}` : "Submit"}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="h-11 w-36 rounded-md bg-zinc-900 text-sm font-medium text-white disabled:opacity-60"
+          >
+            {isLoading ? `Loading ${progress.done}/${progress.total}` : "Submit"}
+          </button>
+          <button
+            type="button"
+            onClick={handleStop}
+            disabled={!isLoading}
+            className="h-11 w-24 rounded-md border border-zinc-300 text-sm font-medium text-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isStopping ? "Stopping" : "Stop"}
+          </button>
+        </div>
       </form>
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -244,7 +295,8 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
               <th className="border-b border-zinc-300 px-4 py-3">Profile URL</th>
               <th className="border-b border-zinc-300 px-4 py-3">Follower Count</th>
               <th className="border-b border-zinc-300 px-4 py-3">Average View Count (Excl Top 4)</th>
-              <th className="border-b border-zinc-300 px-4 py-3">Average View Count (No Exclusion)</th>
+              <th className="border-b border-zinc-300 px-4 py-3">Average View Count (No Exclusion, Raw)</th>
+              <th className="border-b border-zinc-300 px-4 py-3">Average View Count (Top 60, Every Other)</th>
               <th className="border-b border-zinc-300 px-4 py-3">Median View Count</th>
               <th className="border-b border-zinc-300 px-4 py-3">Engagement Rate</th>
               {isDevMode ? (
@@ -255,13 +307,13 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
                   <th className="border-b border-zinc-300 px-4 py-3">Rocket Std Dev Time Sorted</th>
                   <th className="border-b border-zinc-300 px-4 py-3">Rocket SD-Filtered Time Sorted</th>
                   <th className="border-b border-zinc-300 px-4 py-3">Rocket Std Dev</th>
-                  <th className="border-b border-zinc-300 px-4 py-3">Rocket100 Avg (SD Filtered)</th>
+                  <th className="border-b border-zinc-300 px-4 py-3">Rocket60 Avg (SD Filtered)</th>
                   <th className="border-b border-zinc-300 px-4 py-3">Rocket Top 10 Median (Time Sorted, SD Filtered)</th>
                   <th className="border-b border-zinc-300 px-4 py-3">Last 30d Avg</th>
                   <th className="border-b border-zinc-300 px-4 py-3">Last 30d Std Dev</th>
                   <th className="border-b border-zinc-300 px-4 py-3">Last 30d SD-Filtered Avg</th>
                   <th className="border-b border-zinc-300 px-4 py-3">Last 30d Videos Used</th>
-                  <th className="border-b border-zinc-300 px-4 py-3">Rocket Top 100 Views</th>
+                  <th className="border-b border-zinc-300 px-4 py-3">Rocket Top 60 Views</th>
                   <th className="border-b border-zinc-300 px-4 py-3">Rocket Items Used</th>
                   <th className="border-b border-zinc-300 px-4 py-3">Rocket Pages Fetched</th>
                   <th className="border-b border-zinc-300 px-4 py-3">Rocket Items Scanned</th>
@@ -292,7 +344,10 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
                       {formatter.format(row.rocketTop20AverageViewsTimeSortedSdFiltered)}
                     </td>
                     <td className="border-b border-zinc-200 px-4 py-3">
-                      {formatter.format(row.rocketTop20AverageViewsTimeSortedSdFilteredRaw)}
+                      {formatter.format(row.rocketTop20AverageViewsTimeSortedRaw)}
+                    </td>
+                    <td className="border-b border-zinc-200 px-4 py-3">
+                      {formatter.format(row.rocketTop60EveryOtherAverageViewsTimeSorted)}
                     </td>
                     <td className="border-b border-zinc-200 px-4 py-3">{formatter.format(row.rocketTop10MedianViewsTimeSortedSdFiltered)}</td>
                     <td className="border-b border-zinc-200 px-4 py-3">{percentFormatter.format(row.engagementRate)}%</td>
@@ -310,7 +365,7 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
                         <td className="border-b border-zinc-200 px-4 py-3">{formatter.format(row.last30DaysStdDev)}</td>
                         <td className="border-b border-zinc-200 px-4 py-3">{formatter.format(row.last30DaysSdFilteredAverageViews)}</td>
                         <td className="border-b border-zinc-200 px-4 py-3">{row.last30DaysVideosUsed}</td>
-                        <td className="border-b border-zinc-200 px-4 py-3">{formatter.format(row.rocketTop100MediaViews)}</td>
+                        <td className="border-b border-zinc-200 px-4 py-3">{formatter.format(row.rocketTop60MediaViews)}</td>
                         <td className="border-b border-zinc-200 px-4 py-3">{row.rocketTopMediaItemsUsed}</td>
                         <td className="border-b border-zinc-200 px-4 py-3">{row.rocketPagesFetched}</td>
                         <td className="border-b border-zinc-200 px-4 py-3">{row.rocketItemsScanned}</td>
