@@ -30,6 +30,7 @@ type CreatorMetric = {
   rocketStdDevTimeSorted: number;
   rocketSdFilteredAverageViewsTimeSorted: number;
   rocketTop20AverageViewsTimeSortedSdFiltered: number;
+  rocketTop20AverageViewsTimeSortedSdFilteredRaw: number;
   rocketTop10MedianViewsTimeSortedSdFiltered: number;
   rocketTopMediaItemsUsed: number;
   rocketTop100MediaViews: number;
@@ -90,7 +91,8 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
       "Username",
       "Profile URL",
       "Follower Count",
-      "Average View Count",
+      "Average View Count (Excl Top 4)",
+      "Average View Count (No Exclusion)",
       "Median View Count",
       "Engagement Rate",
     ];
@@ -103,6 +105,7 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
         row.profileUrl,
         row.followerCount,
         Math.round(row.rocketTop20AverageViewsTimeSortedSdFiltered),
+        Math.round(row.rocketTop20AverageViewsTimeSortedSdFilteredRaw),
         Math.round(row.rocketTop10MedianViewsTimeSortedSdFiltered),
         row.engagementRate.toFixed(2),
       ];
@@ -240,7 +243,8 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
               <th className="border-b border-zinc-300 px-4 py-3">Username</th>
               <th className="border-b border-zinc-300 px-4 py-3">Profile URL</th>
               <th className="border-b border-zinc-300 px-4 py-3">Follower Count</th>
-              <th className="border-b border-zinc-300 px-4 py-3">Average View Count</th>
+              <th className="border-b border-zinc-300 px-4 py-3">Average View Count (Excl Top 4)</th>
+              <th className="border-b border-zinc-300 px-4 py-3">Average View Count (No Exclusion)</th>
               <th className="border-b border-zinc-300 px-4 py-3">Median View Count</th>
               <th className="border-b border-zinc-300 px-4 py-3">Engagement Rate</th>
               {isDevMode ? (
@@ -286,6 +290,9 @@ export default function HomeClient({ devModeEnabled }: HomeClientProps) {
                     <td className="border-b border-zinc-200 px-4 py-3">{formatter.format(row.followerCount)}</td>
                     <td className="border-b border-zinc-200 px-4 py-3">
                       {formatter.format(row.rocketTop20AverageViewsTimeSortedSdFiltered)}
+                    </td>
+                    <td className="border-b border-zinc-200 px-4 py-3">
+                      {formatter.format(row.rocketTop20AverageViewsTimeSortedSdFilteredRaw)}
                     </td>
                     <td className="border-b border-zinc-200 px-4 py-3">{formatter.format(row.rocketTop10MedianViewsTimeSortedSdFiltered)}</td>
                     <td className="border-b border-zinc-200 px-4 py-3">{percentFormatter.format(row.engagementRate)}%</td>

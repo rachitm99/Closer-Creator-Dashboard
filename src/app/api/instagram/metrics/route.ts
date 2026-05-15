@@ -66,6 +66,7 @@ type CreatorMetric = {
   rocketStdDevTimeSorted: number;
   rocketSdFilteredAverageViewsTimeSorted: number;
   rocketTop20AverageViewsTimeSortedSdFiltered: number;
+  rocketTop20AverageViewsTimeSortedSdFilteredRaw: number;
   rocketTop10MedianViewsTimeSortedSdFiltered: number;
   rocketTopMediaItemsUsed: number;
   rocketTop100MediaViews: number;
@@ -406,6 +407,25 @@ function getTopNClipMediaItemsByTime(items: ClipMediaItem[], n: number): ClipMed
   return [...items]
     .sort((a, b) => b.takenAt - a.takenAt)
     .slice(0, n);
+}
+
+function excludeTopNByViewCount(items: ClipMediaItem[], n: number): ClipMediaItem[] {
+  if (n <= 0) {
+    return items;
+  }
+
+  const excludedShortcodes = new Set(
+    [...items]
+      .sort((a, b) => b.viewCount - a.viewCount)
+      .slice(0, n)
+      .map((item) => item.shortcode)
+  );
+
+  if (excludedShortcodes.size === 0) {
+    return items;
+  }
+
+  return items.filter((item) => !excludedShortcodes.has(item.shortcode));
 }
 
 function sanitizeFileSegment(value: string): string {
@@ -1225,7 +1245,12 @@ export async function POST(request: Request) {
         20,
         RECEIVED_ORDER_EXCLUDED_COUNT
       );
-      const timeSortedRocketTop20Views = timeSortedRocketTop20.map((item) => item.viewCount);
+      const timeSortedRocketTop20ViewsAll = timeSortedRocketTop20.map((item) => item.viewCount);
+      const rocketTop20AverageViewsTimeSortedSdFilteredRaw = getSdFilteredAverage(
+        timeSortedRocketTop20ViewsAll
+      );
+      const timeSortedRocketTop20WithoutTop4 = excludeTopNByViewCount(timeSortedRocketTop20, 4);
+      const timeSortedRocketTop20Views = timeSortedRocketTop20WithoutTop4.map((item) => item.viewCount);
       const rocketTop20AverageViewsTimeSortedSdFiltered = getSdFilteredAverage(
         timeSortedRocketTop20Views
       );
@@ -1300,6 +1325,7 @@ export async function POST(request: Request) {
         rocketStdDevTimeSorted: timeSortedRocketMetrics.stdDev,
         rocketSdFilteredAverageViewsTimeSorted: timeSortedRocketMetrics.sdFilteredAverage,
         rocketTop20AverageViewsTimeSortedSdFiltered,
+        rocketTop20AverageViewsTimeSortedSdFilteredRaw,
         rocketTop10MedianViewsTimeSortedSdFiltered,
         rocketTopMediaItemsUsed: selectedRocket100.length,
         rocketTop100MediaViews,
